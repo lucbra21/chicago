@@ -1,6 +1,5 @@
-streamlit>=1.34
-pandas>=2.3
-numpy>=1.24
-tabula-py>=2.10
-openpyxl>=3.1
-XlsxWriter>=3.2
+streamlit
+pandas
+openpyxl
+xlsxwriter
+tabula-py
