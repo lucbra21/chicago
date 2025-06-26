@@ -150,137 +150,71 @@ def process_salary_data(pdf_path: str) -> pd.DataFrame:
         return pd.DataFrame(data)
     
     else:
-        # Detectar si es un formato específico basado en el contenido
-        if "Last Name First Name Player Status Player Type 2025 Salary" in text:
-            st.text("Detectado formato específico con estructura tabular...")
-            
-            # Dividir el texto en líneas
-            lines = text.split('\n')
-            
-            # Buscar líneas que contengan nombres y apellidos seguidos de un valor de salario
-            # Patrón específico para este formato: Apellido Nombre ... Salario
-            player_pattern = r'([A-Za-z]+)\s+([A-Za-z]+)\s+.*?([\d,\.]+\$|\$[\d,\.]+)'
-            
-            for line in lines:
-                matches = re.search(player_pattern, line)
-                if matches:
-                    last_name = matches.group(1).strip()
-                    first_name = matches.group(2).strip()
-                    salary_str = matches.group(3).strip()
-                    
-                    # Limpiar el salario (quitar $, comas, etc)
-                    cleaned_salary = re.sub(r'[^\d]', '', salary_str)
-                    
+        # Intentar diferentes patrones para encontrar nombres y salarios
+        # Patrón 1: Nombre seguido de cifra con $ y comas
+        pattern1 = r'([A-Za-z\s\-\']+)\s+\$(\d{1,3}(?:,\d{3})+)'
+        # Patrón 2: Nombre seguido de cifra con o sin $ y con o sin comas
+        pattern2 = r'([A-Za-z\s\-\']+)\s+\$?(\d+(?:,\d{3})*)'
+        # Patrón 3: Buscar líneas con nombres y cifras
+        pattern3 = r'([A-Za-z\s\-\']+)\s+(\d+)'
+        
+        # Intentar con los diferentes patrones
+        matches = re.findall(pattern1, text)
+        if not matches:
+            matches = re.findall(pattern2, text)
+        if not matches:
+            matches = re.findall(pattern3, text)
+        
+        if matches:
+            for name, salary in matches:
+                name = name.strip()
+                # Separar nombre en apellido y nombre
+                name_parts = name.rsplit(' ', 1)
+                if len(name_parts) == 2:
+                    last, first = name_parts
+                    # Limpiar el salario y convertirlo a número
+                    cleaned_salary = re.sub(r'[^\d]', '', salary)
                     try:
-                        # Convertir a número y verificar que sea un valor razonable
-                        if cleaned_salary:
-                            numeric_salary = int(cleaned_salary)
-                            
-                            # Si el salario es demasiado grande, probablemente es un error
-                            if numeric_salary > 1000000:  # Salarios de NWSL suelen ser menores a 1 millón
-                                continue
-                                
-                            # Crear formato de nombre abreviado
-                            player_name = f"{first_name[0]}. {last_name}"
-                            data.append({"Player": player_name, "2025 Salary": numeric_salary})
+                        numeric_salary = int(cleaned_salary)
+                        # Crear formato de nombre abreviado (inicial + apellido)
+                        player_name = f"{first[0]}. {last}"
+                        data.append({"Player": player_name, "2025 Salary": numeric_salary})
                     except ValueError:
                         continue
+        
+        # Si no se encontraron coincidencias con los patrones regulares,
+        # intentar dividir el texto en líneas y buscar patrones línea por línea
+        if not data:
+            lines = text.split('\n')
             
-            # Si no se encontraron datos, intentar con otro enfoque
-            if not data:
-                # Buscar patrones específicos de salario con formato $XXX,XXX.XX
-                salary_pattern = r'([A-Za-z]+)\s+([A-Za-z]+).*?(\d{1,3}(?:,\d{3})*\.\d{2})\s*\$'
-                
-                for line in lines:
-                    matches = re.search(salary_pattern, line)
-                    if matches:
-                        last_name = matches.group(1).strip()
-                        first_name = matches.group(2).strip()
-                        salary_str = matches.group(3).strip()
+            for line in lines:
+                # Buscar líneas que contengan letras y números
+                if re.search(r'[A-Za-z]', line) and re.search(r'\d', line):
+                    # Intentar separar nombre y salario
+                    parts = re.split(r'\s{2,}|\t', line.strip())
+                    if len(parts) >= 2:
+                        name = parts[0].strip()
+                        # Buscar el último elemento que contenga dígitos
+                        salary_part = None
+                        for part in reversed(parts):
+                            if re.search(r'\d', part):
+                                salary_part = part
+                                break
                         
-                        # Limpiar el salario
-                        cleaned_salary = re.sub(r'[^\d]', '', salary_str)
-                        
-                        try:
-                            if cleaned_salary:
-                                numeric_salary = int(cleaned_salary)
-                                if 10000 <= numeric_salary <= 1000000:  # Rango razonable para NWSL
-                                    player_name = f"{first_name[0]}. {last_name}"
+                        if salary_part:
+                            # Limpiar el salario
+                            salary = re.sub(r'[^\d]', '', salary_part)
+                            try:
+                                numeric_salary = int(salary)
+                                # Separar nombre en apellido y nombre
+                                name_parts = name.rsplit(' ', 1)
+                                if len(name_parts) == 2:
+                                    last, first = name_parts
+                                    # Crear formato de nombre abreviado
+                                    player_name = f"{first[0]}. {last}"
                                     data.append({"Player": player_name, "2025 Salary": numeric_salary})
-                        except ValueError:
-                            continue
-        else:
-            # Enfoque original para otros formatos de PDF
-            # Patrón 1: Nombre seguido de cifra con $ y comas
-            pattern1 = r'([A-Za-z\s\-\']+)\s+\$(\d{1,3}(?:,\d{3})+)'
-            # Patrón 2: Nombre seguido de cifra con o sin $ y con o sin comas
-            pattern2 = r'([A-Za-z\s\-\']+)\s+\$?(\d+(?:,\d{3})*)'
-            # Patrón 3: Buscar líneas con nombres y cifras
-            pattern3 = r'([A-Za-z\s\-\']+)\s+(\d+)'
-            
-            # Intentar con los diferentes patrones
-            matches = re.findall(pattern1, text)
-            if not matches:
-                matches = re.findall(pattern2, text)
-            if not matches:
-                matches = re.findall(pattern3, text)
-            
-            if matches:
-                for name, salary in matches:
-                    name = name.strip()
-                    # Separar nombre en apellido y nombre
-                    name_parts = name.rsplit(' ', 1)
-                    if len(name_parts) == 2:
-                        last, first = name_parts
-                        # Limpiar el salario y convertirlo a número
-                        cleaned_salary = re.sub(r'[^\d]', '', salary)
-                        try:
-                            numeric_salary = int(cleaned_salary)
-                            # Verificar que el salario esté en un rango razonable
-                            if numeric_salary > 1000000:  # Limitar a un valor razonable para NWSL
+                            except ValueError:
                                 continue
-                            # Crear formato de nombre abreviado (inicial + apellido)
-                            player_name = f"{first[0]}. {last}"
-                            data.append({"Player": player_name, "2025 Salary": numeric_salary})
-                        except ValueError:
-                            continue
-            
-            # Si no se encontraron coincidencias con los patrones regulares,
-            # intentar dividir el texto en líneas y buscar patrones línea por línea
-            if not data:
-                lines = text.split('\n')
-                
-                for line in lines:
-                    # Buscar líneas que contengan letras y números
-                    if re.search(r'[A-Za-z]', line) and re.search(r'\d', line):
-                        # Intentar separar nombre y salario
-                        parts = re.split(r'\s{2,}|\t', line.strip())
-                        if len(parts) >= 2:
-                            name = parts[0].strip()
-                            # Buscar el último elemento que contenga dígitos
-                            salary_part = None
-                            for part in reversed(parts):
-                                if re.search(r'\d', part):
-                                    salary_part = part
-                                    break
-                            
-                            if salary_part:
-                                # Limpiar el salario
-                                salary = re.sub(r'[^\d]', '', salary_part)
-                                try:
-                                    numeric_salary = int(salary)
-                                    # Verificar que el salario esté en un rango razonable
-                                    if numeric_salary > 1000000:  # Limitar a un valor razonable para NWSL
-                                        continue
-                                    # Separar nombre en apellido y nombre
-                                    name_parts = name.rsplit(' ', 1)
-                                    if len(name_parts) == 2:
-                                        last, first = name_parts
-                                        # Crear formato de nombre abreviado
-                                        player_name = f"{first[0]}. {last}"
-                                        data.append({"Player": player_name, "2025 Salary": numeric_salary})
-                                except ValueError:
-                                    continue
         
         if not data:
             st.warning(f"⚠️ No se pudieron procesar datos válidos de {os.path.basename(pdf_path)}")
@@ -360,12 +294,6 @@ if excel_file and pdf_files:
 
         unmatched = df_merged[df_merged["Team_y"].isna()].copy()
         matched = df_merged[df_merged["Team_y"].notna()].copy()
-        
-        # Asegurar que los valores de salario estén en un formato adecuado
-        if '2025 Salary' in matched.columns:
-            matched['2025 Salary'] = pd.to_numeric(matched['2025 Salary'], errors='coerce').fillna(0).astype('int32')
-        if '2025 Salary' in unmatched.columns:
-            unmatched['2025 Salary'] = pd.to_numeric(unmatched['2025 Salary'], errors='coerce').fillna(0).astype('int32')
 
         st.success(
             f"Procesado completo: {len(matched)} matcheadas, {len(unmatched)} no matcheadas"
@@ -385,17 +313,9 @@ if excel_file and pdf_files:
         )
 
         st.subheader("Preview de datos matcheados")
-        # Convertir explícitamente los tipos para evitar errores de desbordamiento
-        matched_display = matched.copy()
-        if '2025 Salary' in matched_display.columns:
-            matched_display['2025 Salary'] = matched_display['2025 Salary'].astype('int32')
-        st.dataframe(matched_display.head())
+        st.dataframe(matched.head())
 
         st.subheader("Preview de datos no matcheados")
-        # Convertir explícitamente los tipos para evitar errores de desbordamiento
-        unmatched_display = unmatched.copy()
-        if '2025 Salary' in unmatched_display.columns:
-            unmatched_display['2025 Salary'] = unmatched_display['2025 Salary'].astype('int32')
-        st.dataframe(unmatched_display.head())
+        st.dataframe(unmatched.head())
 else:
     st.info("Carga el Excel y al menos un PDF para comenzar.")
